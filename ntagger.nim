@@ -1,4 +1,4 @@
-import std/[os, strutils, algorithm]
+import std/[os, strutils, algorithm, parseopt]
 
 import deps/compiler/[ast, syntaxes, options, idents, msgs, pathutils]
 
@@ -188,5 +188,48 @@ proc generateCtagsForDir*(root: string): string =
     )
 
 when isMainModule:
-  let root = if paramCount() >= 1: paramStr(1) else: getCurrentDir()
-  stdout.write generateCtagsForDir(root)
+  ## Simple CLI for ntagger.
+  ##
+  ## Supports a `-f` flag (like ctags/universal-ctags) to control
+  ## where the generated tags are written. If `-f` is not provided
+  ## or is set to `-`, tags are written to stdout.
+
+  var
+    root = ""
+    outFile = ""
+    expectOutFile = false
+
+  var parser = initOptParser(commandLineParams())
+
+  for kind, key, val in parser.getopt():
+    case kind
+    of cmdShortOption, cmdLongOption:
+      case key
+      of "f", "output":
+        if val.len > 0:
+          outFile = val
+          expectOutFile = false
+        else:
+          # Remember that the next argument should be treated as the
+          # value for this option (e.g. `-f tags`).
+          expectOutFile = true
+      else:
+        discard
+    of cmdArgument:
+      if expectOutFile:
+        outFile = key
+        expectOutFile = false
+      elif root.len == 0:
+        root = key
+    of cmdEnd:
+      discard
+
+  if root.len == 0:
+    root = getCurrentDir()
+
+  let tags = generateCtagsForDir(root)
+
+  if outFile.len == 0 or outFile == "-":
+    stdout.write(tags)
+  else:
+    writeFile(outFile, tags)
