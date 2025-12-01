@@ -376,6 +376,7 @@ proc main() =
     systemMode = false
     atlasMode = false
     atlasAllMode = false
+    depsOnly = false
     excludes: seq[string] = @[]
 
   var parser = initOptParser(commandLineParams())
@@ -437,8 +438,10 @@ proc main() =
     if not fileExists(depsDir / "tags") or atlasAllMode:
       for pth in searchPaths():
         let name = pth.splitFile().name
-        if not name.startsWith("_"): rootsToScan.add(pth)
-      let depTags = generateCtagsForDirImpl(rootsToScan, [], baseDir = depsDir)
+        if name.startsWith("_"): continue
+        if not systemMode and not pth.isRelativeTo(depsDir): continue
+        rootsToScan.add(pth)
+      let depTags = generateCtagsForDirImpl(rootsToScan, [])
       writeFile(depsDir/"tags", depTags)
 
     let tags = generateCtagsForDirImpl([getCurrentDir()], [depsDir])
