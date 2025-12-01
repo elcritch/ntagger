@@ -340,7 +340,7 @@ proc nimblePaths(): seq[string] =
   for p in queryNimSettingSeq("nimblePaths"):
     result.addRootIfDir(p)
 
-when isMainModule:
+proc main() =
   ## Simple CLI for ntagger.
   ##
   ## Supports a `-f` flag (like ctags/universal-ctags) to control
@@ -420,9 +420,21 @@ when isMainModule:
   var rootsToScan: seq[string] = @[]
   rootsToScan.add root
 
-  if systemMode:
-    for p in queryNimSettingSeq("searchPaths"):
-      rootsToScan.addRootIfDir(p)
+  if atlasMode:
+    let depsDir = "deps"
+    createDir("deps"/"_ctags")
+    for pth in walkDirs(depsDir / "*"):
+      let name = pth.splitFile().name
+      if name.startsWith("_"): continue
+      let ctags = depsDir / "_ctags" / name & ".ctag"
+      echo "DEPS: ", ctags
+      if not fileExists(ctags):
+        let tags = generateCtagsForDir(pth, [])
+        writeFile(ctags, tags)
+
+    let tags = generateCtagsForDir(getCurrentDir(), [depsDir])
+    writeFile("tags", tags)
+    return
 
   if autoMode:
     # Query Nim for its search paths and Nimble package paths and
@@ -445,3 +457,6 @@ when isMainModule:
     stdout.write(tags)
   else:
     writeFile(outFile, tags)
+
+when isMainModule:
+  main()
