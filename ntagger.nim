@@ -1,4 +1,4 @@
-import std/[os, strutils, sequtils, algorithm]
+import std/[os, strutils, algorithm]
 
 import deps/compiler/[ast, syntaxes, options, idents, msgs, pathutils]
 
@@ -76,8 +76,6 @@ proc isExportedName(n: PNode): bool =
 proc collectTagsFromAst(n: PNode, file: string, tags: var seq[Tag]) =
   ## Based on compiler/docgen.generateTags: walks the AST and collects
   ## tags for declarations we care about.
-  when defined(debugTags):
-    echo "[ntagger] visit kind=", $n.kind, " line=", $n.info.line
   case n.kind
   of nkCommentStmt:
     discard
@@ -137,8 +135,6 @@ proc parseNimFile(conf: ConfigRef, cache: IdentCache, file: string): PNode =
 proc collectTagsForFile*(conf: ConfigRef, cache: IdentCache, file: string): seq[Tag] =
   let ast = parseNimFile(conf, cache, file)
   if ast.isNil: return
-  when defined(debugTags):
-    echo "[ntagger] AST root for ", file, " kind=", $ast.kind
   collectTagsFromAst(ast, file, result)
 
 proc generateCtagsForDir*(root: string): string =
