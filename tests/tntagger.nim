@@ -53,3 +53,5 @@ suite "ctags output":
     check tagsText.contains("Foo")
     check tagsText.contains("globalVar")
     check tagsText.contains("myTemplate")
+    # And that private symbols are not exported
+    check not tagsText.contains("privateProc")

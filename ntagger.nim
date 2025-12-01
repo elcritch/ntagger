@@ -56,6 +56,23 @@ proc nodeName(n: PNode): string =
   else:
     discard
 
+proc isExportedName(n: PNode): bool =
+  ## Returns true if a name node represents an exported symbol.
+  ##
+  ## We treat a ``nkPostfix`` name (e.g. ``foo*``) as exported and
+  ## follow the same structural patterns as ``nodeName``.
+  case n.kind
+  of nkPostfix:
+    result = true
+  of nkPragmaExpr:
+    result = isExportedName(n[0])
+  of nkAccQuoted:
+    result = isExportedName(n[0])
+  of nkOpenSymChoice, nkClosedSymChoice, nkOpenSym:
+    result = isExportedName(n[0])
+  else:
+    result = false
+
 proc collectTagsFromAst(n: PNode, file: string, tags: var seq[Tag]) =
   ## Based on compiler/docgen.generateTags: walks the AST and collects
   ## tags for declarations we care about.
@@ -65,35 +82,43 @@ proc collectTagsFromAst(n: PNode, file: string, tags: var seq[Tag]) =
   of nkCommentStmt:
     discard
   of nkProcDef:
-    let name = nodeName(n[namePos])
-    addTag(tags, file, int(n.info.line), name, tkProc)
+    if isExportedName(n[namePos]):
+      let name = nodeName(n[namePos])
+      addTag(tags, file, int(n.info.line), name, tkProc)
   of nkFuncDef:
-    let name = nodeName(n[namePos])
-    addTag(tags, file, int(n.info.line), name, tkFunc)
+    if isExportedName(n[namePos]):
+      let name = nodeName(n[namePos])
+      addTag(tags, file, int(n.info.line), name, tkFunc)
   of nkMethodDef:
-    let name = nodeName(n[namePos])
-    addTag(tags, file, int(n.info.line), name, tkMethod)
+    if isExportedName(n[namePos]):
+      let name = nodeName(n[namePos])
+      addTag(tags, file, int(n.info.line), name, tkMethod)
   of nkIteratorDef:
-    let name = nodeName(n[namePos])
-    addTag(tags, file, int(n.info.line), name, tkIterator)
+    if isExportedName(n[namePos]):
+      let name = nodeName(n[namePos])
+      addTag(tags, file, int(n.info.line), name, tkIterator)
   of nkMacroDef:
-    let name = nodeName(n[namePos])
-    addTag(tags, file, int(n.info.line), name, tkMacro)
+    if isExportedName(n[namePos]):
+      let name = nodeName(n[namePos])
+      addTag(tags, file, int(n.info.line), name, tkMacro)
   of nkTemplateDef:
-    let name = nodeName(n[namePos])
-    addTag(tags, file, int(n.info.line), name, tkTemplate)
+    if isExportedName(n[namePos]):
+      let name = nodeName(n[namePos])
+      addTag(tags, file, int(n.info.line), name, tkTemplate)
   of nkConverterDef:
-    let name = nodeName(n[namePos])
-    addTag(tags, file, int(n.info.line), name, tkConverter)
+    if isExportedName(n[namePos]):
+      let name = nodeName(n[namePos])
+      addTag(tags, file, int(n.info.line), name, tkConverter)
   of nkTypeSection, nkVarSection, nkLetSection, nkConstSection:
     for i in 0..<n.len:
       if n[i].kind == nkCommentStmt: continue
       let def = n[i]
       let nameNode = def[0]
-      let name = nodeName(nameNode)
-      let kindOffset = ord(n.kind) - ord(nkTypeSection)
-      let symKind = TagKind(ord(tkType) + kindOffset)
-      addTag(tags, file, int(def.info.line), name, symKind)
+      if isExportedName(nameNode):
+        let name = nodeName(nameNode)
+        let kindOffset = ord(n.kind) - ord(nkTypeSection)
+        let symKind = TagKind(ord(tkType) + kindOffset)
+        addTag(tags, file, int(def.info.line), name, symKind)
   of nkStmtList:
     for i in 0..<n.len:
       collectTagsFromAst(n[i], file, tags)
@@ -145,12 +170,21 @@ proc generateCtagsForDir*(root: string): string =
   result.add "!_TAG_PROGRAM_NAME\tntagger\t//\n"
   result.add "!_TAG_PROGRAM_VERSION\t0.1\t//\n"
 
+  let baseDir = getCurrentDir()
+
   for t in tags:
+    let relFile =
+      try:
+        relativePath(t.file, baseDir)
+      except OSError:
+        # Fallback to the original path if a relative path
+        # cannot be constructed for some reason.
+        t.file
     # third field is an ex-command; using the line number is valid
     # and simple: `<line>;"`.
     result.add(
       t.name & "\t" &
-      t.file & "\t" &
+      relFile & "\t" &
       $t.line & ";\"\t" &
       "kind:" & tagKindName(t.kind) & "\t" &
       "line:" & $t.line & "\t" &

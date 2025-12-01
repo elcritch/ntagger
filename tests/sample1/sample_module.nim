@@ -15,6 +15,9 @@ const
 proc publicProc*(x: int): int =
   result = x + 1
 
+proc privateProc(x: int): int =
+  result = x + 1
+
 func inlineFunc*(x: int): int = x * 2
 
 iterator items*(n: int): int =
