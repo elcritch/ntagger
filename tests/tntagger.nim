@@ -55,3 +55,11 @@ suite "ctags output":
     check tagsText.contains("myTemplate")
     # And that private symbols are not exported
     check not tagsText.contains("privateProc")
+
+    # Verify that routine tags include a signature field.
+    let publicLine = tagLines.filterIt(it.startsWith("publicProc\t"))
+    check publicLine.len == 1
+    let publicCols = publicLine[0].split('\t')
+    let sigField = publicCols.filterIt(it.startsWith("signature:"))
+    check sigField.len == 1
+    check sigField[0].contains("x: int")

@@ -1,6 +1,6 @@
 import std/[os, strutils, algorithm, parseopt]
 
-import deps/compiler/[ast, syntaxes, options, idents, msgs, pathutils]
+import deps/compiler/[ast, syntaxes, options, idents, msgs, pathutils, renderer]
 
 type
   TagKind* = enum
@@ -13,6 +13,7 @@ type
     file*: string
     line*: int
     kind*: TagKind
+    signature*: string
 
 proc tagKindName*(k: TagKind): string =
   case k
@@ -28,9 +29,11 @@ proc tagKindName*(k: TagKind): string =
   of tkMacro: "macro"
   of tkTemplate: "template"
 
-proc addTag(tags: var seq[Tag], file: string, line: int, name: string, k: TagKind) =
+proc addTag(tags: var seq[Tag], file: string, line: int, name: string, k: TagKind,
+            signature = "") =
   if name.len == 0: return
-  tags.add Tag(name: name, file: file, line: line, kind: k)
+  tags.add Tag(name: name, file: file, line: line, kind: k,
+      signature: signature)
 
 proc nodeName(n: PNode): string =
   ## Extracts the plain identifier name for a symbol definition node.
@@ -73,6 +76,68 @@ proc isExportedName(n: PNode): bool =
   else:
     result = false
 
+proc buildSignature(n: PNode): string =
+  ## Builds a Nim-like signature string for routine definition nodes.
+  ##
+  ## The structure mirrors the JSON signature generation in
+  ## deps/compiler/docgen.nim, but flattens it to a single string in
+  ## the form: "[T](x: int, y: string = 0): int {. pragmas .}".
+
+  # Generic parameters
+  if n[genericParamsPos].kind != nkEmpty:
+    result.add "["
+    var firstGen = true
+    for genericParam in n[genericParamsPos]:
+      if not firstGen:
+        result.add ", "
+      firstGen = false
+      result.add $genericParam
+    result.add "]"
+
+  # Parameters
+  result.add "("
+  if n[paramsPos].len > 1:
+    var firstParam = true
+    for paramIdx in 1 ..< n[paramsPos].len:
+      let param = n[paramsPos][paramIdx]
+      if param.kind == nkEmpty:
+        continue
+
+      let paramType = $param[^2]
+      let defaultNode = param[^1]
+
+      for identIdx in 0 ..< param.len - 2:
+        let nameNode = param[identIdx]
+        if nameNode.kind == nkEmpty:
+          continue
+        if not firstParam:
+          result.add ", "
+        firstParam = false
+        result.add $nameNode
+        if paramType.len > 0:
+          result.add ": "
+          result.add paramType
+        if defaultNode.kind != nkEmpty:
+          result.add " = "
+          result.add $defaultNode
+  result.add ")"
+
+  # Return type
+  if n[paramsPos][0].kind != nkEmpty:
+    result.add ": "
+    result.add $n[paramsPos][0]
+
+  # Pragmas
+  if n[pragmasPos].kind != nkEmpty:
+    result.add " {. "
+    var firstPragma = true
+    for pragma in n[pragmasPos]:
+      if not firstPragma:
+        result.add ", "
+      firstPragma = false
+      result.add $pragma
+    result.add " .}"
+
 proc collectTagsFromAst(n: PNode, file: string, tags: var seq[Tag]) =
   ## Based on compiler/docgen.generateTags: walks the AST and collects
   ## tags for declarations we care about.
@@ -82,31 +147,31 @@ proc collectTagsFromAst(n: PNode, file: string, tags: var seq[Tag]) =
   of nkProcDef:
     if isExportedName(n[namePos]):
       let name = nodeName(n[namePos])
-      addTag(tags, file, int(n.info.line), name, tkProc)
+      addTag(tags, file, int(n.info.line), name, tkProc, buildSignature(n))
   of nkFuncDef:
     if isExportedName(n[namePos]):
       let name = nodeName(n[namePos])
-      addTag(tags, file, int(n.info.line), name, tkFunc)
+      addTag(tags, file, int(n.info.line), name, tkFunc, buildSignature(n))
   of nkMethodDef:
     if isExportedName(n[namePos]):
       let name = nodeName(n[namePos])
-      addTag(tags, file, int(n.info.line), name, tkMethod)
+      addTag(tags, file, int(n.info.line), name, tkMethod, buildSignature(n))
   of nkIteratorDef:
     if isExportedName(n[namePos]):
       let name = nodeName(n[namePos])
-      addTag(tags, file, int(n.info.line), name, tkIterator)
+      addTag(tags, file, int(n.info.line), name, tkIterator, buildSignature(n))
   of nkMacroDef:
     if isExportedName(n[namePos]):
       let name = nodeName(n[namePos])
-      addTag(tags, file, int(n.info.line), name, tkMacro)
+      addTag(tags, file, int(n.info.line), name, tkMacro, buildSignature(n))
   of nkTemplateDef:
     if isExportedName(n[namePos]):
       let name = nodeName(n[namePos])
-      addTag(tags, file, int(n.info.line), name, tkTemplate)
+      addTag(tags, file, int(n.info.line), name, tkTemplate, buildSignature(n))
   of nkConverterDef:
     if isExportedName(n[namePos]):
       let name = nodeName(n[namePos])
-      addTag(tags, file, int(n.info.line), name, tkConverter)
+      addTag(tags, file, int(n.info.line), name, tkConverter, buildSignature(n))
   of nkTypeSection, nkVarSection, nkLetSection, nkConstSection:
     for i in 0..<n.len:
       if n[i].kind == nkCommentStmt: continue
@@ -176,16 +241,19 @@ proc generateCtagsForDir*(root: string): string =
         # Fallback to the original path if a relative path
         # cannot be constructed for some reason.
         t.file
-    # third field is an ex-command; using the line number is valid
-    # and simple: `<line>;"`.
-    result.add(
+
+    var line =
       t.name & "\t" &
       relFile & "\t" &
       $t.line & ";\"\t" &
       "kind:" & tagKindName(t.kind) & "\t" &
-      "line:" & $t.line & "\t" &
-      "language:Nim" & "\n"
-    )
+      "line:" & $t.line & "\t"
+
+    if t.signature.len > 0:
+      line.add "signature:" & t.signature & "\t"
+
+    line.add "language:Nim\n"
+    result.add line
 
 when isMainModule:
   ## Simple CLI for ntagger.
