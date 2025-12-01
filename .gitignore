@@ -1,0 +1,16 @@
+*
+!*/
+!*.*
+nim.cfg
+vendor/*/
+nimcache
+*.out
+
+.tool-versions
+*.dSYM/
+/*.png
+nimble.develop
+nimble.paths
+.nimcache
+deps/
+.nimcache
