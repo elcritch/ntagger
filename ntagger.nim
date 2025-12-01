@@ -330,6 +330,16 @@ proc addRootIfDir(roots: var seq[string], path: string) =
       return
   roots.add(p)
 
+proc nimCfgPaths(): seq[string] =
+  if fileExists("nim.cfg"):
+    for line in readLines("nim.cfg"):
+      if line.startsWith("--path:"):
+        result.addRootIfDir(line[7..^1])
+
+proc nimblePaths(): seq[string] =
+  for p in queryNimSettingSeq("nimblePaths"):
+    result.addRootIfDir(p)
+
 when isMainModule:
   ## Simple CLI for ntagger.
   ##
@@ -354,6 +364,7 @@ when isMainModule:
     expectExclude = false
     autoMode = false
     systemMode = false
+    atlasMode = false
     excludes: seq[string] = @[]
 
   var parser = initOptParser(commandLineParams())
@@ -388,6 +399,8 @@ when isMainModule:
           autoMode = true
         of "s", "system":
           systemMode = true
+        of "atlas":
+          atlasMode = true
         else:
           discard
     of cmdArgument:
@@ -409,17 +422,13 @@ when isMainModule:
 
   if systemMode:
     for p in queryNimSettingSeq("searchPaths"):
-      addRootIfDir(rootsToScan, p)
+      rootsToScan.addRootIfDir(p)
 
   if autoMode:
     # Query Nim for its search paths and Nimble package paths and
     # include those directories as additional roots.
-    if fileExists("nim.cfg"):
-      for line in readLines("nim.cfg"):
-        if line.startsWith("--path:"):
-          addRootIfDir(rootsToScan, line[7..^1])
-    for p in queryNimSettingSeq("nimblePaths"):
-      addRootIfDir(rootsToScan, p)
+    rootsToScan.add(nimCfgPaths())
+    rootsToScan.add(nimblePaths())
 
     # In auto mode, default the output file to `tags` unless the
     # user has explicitly provided a different `-f`/`--output`.
