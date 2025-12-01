@@ -135,6 +135,39 @@ ntagger --auto -f mytags .  # override output file name
 ntagger --auto --system -f mytags .  # override output file name
 ```
 
+### Atlas mode
+
+For Atlas-based workspaces (with vendored dependencies under
+`deps/`), ntagger provides an `--atlas` option that keeps project and
+dependency tags in separate files.
+
+```bash
+# In an Atlas workspace root
+ntagger --atlas
+```
+
+When run with `--atlas`:
+
+- Project tags are written to `./tags`, scanning the current
+  workspace and automatically excluding the `deps/` directory.
+- Dependency tags are written (once) to `deps/tags` by scanning Nim
+  search paths that live under `deps/`.
+
+You can force a full dependency reindex with `--atlas-all`, and you
+can include Nim's standard library in the dependency tags by combining
+it with `--system`:
+
+```bash
+ntagger --atlas-all       # rebuild deps/tags and ./tags
+ntagger --atlas --system  # include Nim stdlib in deps/tags
+```
+
+To make Vim/Neovim use the dependency tags, add `deps/tags` to your
+tags search path, for example:
+
+- Vim: `set tags+=deps/tags`
+- Neovim Lua: `vim.opt.tags:append('deps/tags')`
+
 ## Library usage
 
 You can also call ntagger from Nim code by
