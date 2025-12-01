@@ -63,3 +63,20 @@ suite "ctags output":
     let sigField = publicCols.filterIt(it.startsWith("signature:"))
     check sigField.len == 1
     check sigField[0].contains("x: int")
+
+  test "exclude patterns skip matching files":
+    let tmp = sampleDir()
+
+    let allLines = tagsLinesForDir(tmp)
+    let allTagLines = allLines.filterIt(not it.startsWith("!_TAG_"))
+    check allTagLines.len > 0
+
+    # Exclude the only Nim file in the sample directory by name.
+    let tagsWithExclude = generateCtagsForDir(tmp, ["sample_module.nim"])
+    let linesWithExclude = tagsWithExclude.splitLines.filterIt(it.len > 0)
+    let tagLinesWithExclude = linesWithExclude.filterIt(not it.startsWith("!_TAG_"))
+
+    # We still emit the header lines, but there should be no tag lines
+    # once the file is excluded.
+    check linesWithExclude.len >= 4
+    check tagLinesWithExclude.len == 0

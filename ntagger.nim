@@ -31,13 +31,12 @@ proc tagKindName*(k: TagKind): string =
 
 proc addTag(tags: var seq[Tag], file: string, line: int, name: string, k: TagKind,
             signature = "") =
-  if name.len == 0: return
-  tags.add Tag(name: name, file: file, line: line, kind: k,
-      signature: signature)
+  if name.len == 0:
+    return
+  tags.add Tag(name: name, file: file, line: line, kind: k, signature: signature)
 
 proc nodeName(n: PNode): string =
   ## Extracts the plain identifier name for a symbol definition node.
-  ##
   ## Mirrors the logic of compiler/docgen.getNameIdent, but returns a
   ## simple string instead of an identifier.
   case n.kind
@@ -139,8 +138,7 @@ proc buildSignature(n: PNode): string =
     result.add " .}"
 
 proc collectTagsFromAst(n: PNode, file: string, tags: var seq[Tag]) =
-  ## Based on compiler/docgen.generateTags: walks the AST and collects
-  ## tags for declarations we care about.
+  ## Walks the AST and collects tags for declarations we care about.
   case n.kind
   of nkCommentStmt:
     discard
@@ -173,8 +171,9 @@ proc collectTagsFromAst(n: PNode, file: string, tags: var seq[Tag]) =
       let name = nodeName(n[namePos])
       addTag(tags, file, int(n.info.line), name, tkConverter, buildSignature(n))
   of nkTypeSection, nkVarSection, nkLetSection, nkConstSection:
-    for i in 0..<n.len:
-      if n[i].kind == nkCommentStmt: continue
+    for i in 0 ..< n.len:
+      if n[i].kind == nkCommentStmt:
+        continue
       let def = n[i]
       let nameNode = def[0]
       if isExportedName(nameNode):
@@ -183,7 +182,7 @@ proc collectTagsFromAst(n: PNode, file: string, tags: var seq[Tag]) =
         let symKind = TagKind(ord(tkType) + kindOffset)
         addTag(tags, file, int(def.info.line), name, symKind)
   of nkStmtList:
-    for i in 0..<n.len:
+    for i in 0 ..< n.len:
       collectTagsFromAst(n[i], file, tags)
   of nkWhenStmt:
     # Follow the first branch only, like docgen.generateTags.
@@ -199,12 +198,29 @@ proc parseNimFile(conf: ConfigRef, cache: IdentCache, file: string): PNode =
 
 proc collectTagsForFile*(conf: ConfigRef, cache: IdentCache, file: string): seq[Tag] =
   let ast = parseNimFile(conf, cache, file)
-  if ast.isNil: return
+  if ast.isNil:
+    return
   collectTagsFromAst(ast, file, result)
 
-proc generateCtagsForDir*(root: string): string =
+proc isExcludedPath(path: string, excludes: openArray[string]): bool =
+  ## Returns true if `path` should be excluded based on the
+  ## user-provided exclude patterns.
+  ##
+  ## We keep the semantics intentionally simple and ctags-like:
+  ## any pattern that appears as a substring of the normalized
+  ## (DirSep -> '/') path will exclude the file.
+  var normalized = path.replace(DirSep, '/')
+  for pat in excludes:
+    if pat.len == 0:
+      continue
+    let normPat = pat.replace(DirSep, '/')
+    if normalized.contains(normPat):
+      return true
+
+proc generateCtagsForDirImpl(root: string, excludes: openArray[string]): string =
   ## Generate a universal-ctags compatible tags file for all Nim
-  ## modules found under `root` (searched recursively).
+  ## modules found under `root` (searched recursively), optionally
+  ## skipping files whose paths match any of the `excludes` patterns.
   var conf = newConfigRef()
   let absRoot = absolutePath(root)
   conf.projectPath = AbsoluteDir(absRoot)
@@ -212,12 +228,23 @@ proc generateCtagsForDir*(root: string): string =
 
   var tags: seq[Tag] = @[]
   for path in walkDirRec(absRoot):
-    if path.endsWith(".nim"):
-      tags.add collectTagsForFile(conf, cache, path)
+    if not path.endsWith(".nim"):
+      continue
 
-  # sort tags by name, then file, then line, as expected by ctags when
-  # reporting a sorted file
-  tags.sort(proc(a, b: Tag): int =
+    let relPath =
+      try:
+        relativePath(path, absRoot)
+      except OSError:
+        path
+
+    if isExcludedPath(relPath, excludes):
+      continue
+
+    tags.add collectTagsForFile(conf, cache, path)
+
+  # Sort tags by name, then file, then line, as expected by ctags
+  # when reporting a sorted file.
+  tags.sort(proc (a, b: Tag): int =
     result = cmp(a.name, b.name)
     if result == 0:
       result = cmp(a.file, b.file)
@@ -238,8 +265,8 @@ proc generateCtagsForDir*(root: string): string =
       try:
         relativePath(t.file, baseDir)
       except OSError:
-        # Fallback to the original path if a relative path
-        # cannot be constructed for some reason.
+        # Fallback to the original path if a relative path cannot be
+        # constructed for some reason.
         t.file
 
     var line =
@@ -255,17 +282,34 @@ proc generateCtagsForDir*(root: string): string =
     line.add "language:Nim\n"
     result.add line
 
+proc generateCtagsForDir*(root: string): string =
+  ## Backwards-compatible wrapper that generates tags without any
+  ## exclude patterns.
+  result = generateCtagsForDirImpl(root, [])
+
+proc generateCtagsForDir*(root: string, excludes: openArray[string]): string =
+  ## Generate tags while skipping files whose relative paths match
+  ## any of the provided exclude patterns.
+  result = generateCtagsForDirImpl(root, excludes)
+
 when isMainModule:
   ## Simple CLI for ntagger.
   ##
   ## Supports a `-f` flag (like ctags/universal-ctags) to control
   ## where the generated tags are written. If `-f` is not provided
   ## or is set to `-`, tags are written to stdout.
+  ##
+  ## Additionally supports one or more `--exclude`/`-e` options whose
+  ## values are simple path substrings; any Nim file whose path (relative
+  ## to the search root) contains one of these substrings will be
+  ## skipped, similar to ctags' exclude handling.
 
   var
     root = ""
     outFile = ""
     expectOutFile = false
+    expectExclude = false
+    excludes: seq[string] = @[]
 
   var parser = initOptParser(commandLineParams())
 
@@ -288,12 +332,22 @@ when isMainModule:
             # Remember that the next argument should be treated as the
             # value for this option (e.g. `-f tags`).
             expectOutFile = true
+        of "e", "exclude":
+          if val.len > 0:
+            excludes.add val
+            expectExclude = false
+          else:
+            # Next argument will be treated as an exclude pattern.
+            expectExclude = true
         else:
           discard
     of cmdArgument:
       if expectOutFile:
         outFile = key
         expectOutFile = false
+      elif expectExclude:
+        excludes.add key
+        expectExclude = false
       elif root.len == 0:
         root = key
     of cmdEnd:
@@ -302,9 +356,10 @@ when isMainModule:
   if root.len == 0:
     root = getCurrentDir()
 
-  let tags = generateCtagsForDir(root)
+  let tags = generateCtagsForDir(root, excludes)
 
   if outFile.len == 0 or outFile == "-":
     stdout.write(tags)
   else:
     writeFile(outFile, tags)
+
