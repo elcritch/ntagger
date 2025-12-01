@@ -414,6 +414,10 @@ when isMainModule:
   if autoMode:
     # Query Nim for its search paths and Nimble package paths and
     # include those directories as additional roots.
+    if fileExists("nim.cfg"):
+      for line in readLines("nim.cfg"):
+        if line.startsWith("--path:"):
+          addRootIfDir(rootsToScan, line[7..^1])
     for p in queryNimSettingSeq("nimblePaths"):
       addRootIfDir(rootsToScan, p)
 
