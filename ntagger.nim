@@ -235,8 +235,15 @@ proc generateCtagsForDirImpl(
     return
 
   var conf = newConfigRef()
-  let mainRoot = absolutePath(roots[0])
-  conf.projectPath = AbsoluteDir(mainRoot)
+  let firstRootAbs = absolutePath(roots[0])
+  let projectDir =
+    if dirExists(firstRootAbs):
+      firstRootAbs
+    elif fileExists(firstRootAbs):
+      parentDir(firstRootAbs)
+    else:
+      baseDir
+  conf.projectPath = AbsoluteDir(projectDir)
   var cache = newIdentCache()
 
   var tags: seq[Tag] = @[]
@@ -244,20 +251,37 @@ proc generateCtagsForDirImpl(
   for root in roots:
     let absRoot = absolutePath(root)
 
-    for path in walkDirRec(absRoot):
-      if not path.endsWith(".nim"):
+    if dirExists(absRoot):
+      for path in walkDirRec(absRoot):
+        if not path.endsWith(".nim"):
+          continue
+
+        let relPath =
+          try:
+            relativePath(path, absRoot)
+          except OSError:
+            path
+
+        if isExcludedPath(relPath, excludes):
+          continue
+
+        tags.add collectTagsForFile(conf, cache, path, includePrivate)
+    elif fileExists(absRoot):
+      # Allow roots to be explicit Nim files in addition to
+      # directories; in that case, process just the file itself.
+      if not absRoot.endsWith(".nim"):
         continue
 
       let relPath =
         try:
-          relativePath(path, absRoot)
+          relativePath(absRoot, parentDir(absRoot))
         except OSError:
-          path
+          absRoot
 
       if isExcludedPath(relPath, excludes):
         continue
 
-      tags.add collectTagsForFile(conf, cache, path, includePrivate)
+      tags.add collectTagsForFile(conf, cache, absRoot, includePrivate)
 
   # Sort tags by name, then file, then line, as expected by ctags
   # when reporting a sorted file.

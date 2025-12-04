@@ -73,6 +73,7 @@ Basic usage:
 ```bash
 ntagger            # scan . and write tags to stdout
 ntagger path/to/project
+ntagger path/to/file.nim
 ```
 
 Write tags to a file (like ctags):

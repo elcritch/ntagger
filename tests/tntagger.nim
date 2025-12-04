@@ -90,3 +90,13 @@ suite "ctags output":
     # alongside the exported ones.
     check tagsText.contains("publicProc")
     check tagsText.contains("privateProc")
+
+  test "explicit file roots are supported":
+    let tmp = sampleDir()
+    let filePath = tmp / "sample_module.nim"
+
+    # When passing a single file as the root, we still produce a
+    # valid tags stream and respect the exported-only default.
+    let tagsText = generateCtagsForDir(filePath)
+    check tagsText.contains("publicProc")
+    check not tagsText.contains("privateProc")
