@@ -223,8 +223,9 @@ proc isExcludedPath(path: string, excludes: openArray[string]): bool =
 proc generateCtagsForDirImpl(
     roots: openArray[string],
     excludes: openArray[string],
-    baseDir = getCurrentDir(),
-    includePrivate = false
+    baseDir = "",
+    includePrivate = false,
+    tagRelative = false
 ): string =
 
   ## Generate a universal-ctags compatible tags file for all Nim
@@ -242,9 +243,11 @@ proc generateCtagsForDirImpl(
     elif fileExists(firstRootAbs):
       parentDir(firstRootAbs)
     else:
-      baseDir
+      getCurrentDir()
   conf.projectPath = AbsoluteDir(projectDir)
   var cache = newIdentCache()
+
+  let effectiveBaseDir = if baseDir.len == 0: getCurrentDir() else: baseDir
 
   var tags: seq[Tag] = @[]
 
@@ -283,6 +286,14 @@ proc generateCtagsForDirImpl(
 
       tags.add collectTagsForFile(conf, cache, absRoot, includePrivate)
 
+  if tagRelative:
+    for tag in tags.mitems:
+      try:
+        tag.file = relativePath(tag.file, effectiveBaseDir)
+      except OSError:
+        # Keep absolute path if relative cannot be constructed
+        discard
+
   # Sort tags by name, then file, then line, as expected by ctags
   # when reporting a sorted file.
   tags.sort(proc (a, b: Tag): int =
@@ -302,8 +313,8 @@ proc generateCtagsForDirImpl(
   for t in tags:
     let relFile =
       try:
-        if isRelativeTo(t.file, baseDir):
-          relativePath(t.file, baseDir)
+        if isRelativeTo(t.file, effectiveBaseDir):
+          relativePath(t.file, effectiveBaseDir)
         else:
           t.file
       except OSError:
@@ -417,6 +428,7 @@ proc main() =
     atlasAllMode = false
     includePrivate = false
     depsOnly = false
+    tagRelative = false
     excludes: seq[string] = @[]
 
   var parser = initOptParser(commandLineParams())
@@ -457,6 +469,11 @@ proc main() =
           atlasAllMode = true
         of "atlas":
           atlasMode = true
+        of "tag-relative":
+          if val == "yes":
+            tagRelative = true
+          elif val == "no":
+            tagRelative = false
         else:
           discard
     of cmdArgument:
@@ -484,13 +501,15 @@ proc main() =
         if not systemMode and not pth.isRelativeTo(depsDir): continue
         rootsToScan.add(pth)
       let depTags = generateCtagsForDirImpl(rootsToScan, [],
-          includePrivate = includePrivate)
+          baseDir = (if tagRelative: depsDir else: ""),
+          includePrivate = includePrivate, tagRelative = tagRelative)
       writeFile(depsDir/"tags", depTags)
 
     var projectRoots: seq[string] = @[]
     projectRoots.add(roots)
     let tags = generateCtagsForDirImpl(projectRoots, [depsDir],
-        includePrivate = includePrivate)
+        baseDir = (if tagRelative: getCurrentDir() else: ""),
+        includePrivate = includePrivate, tagRelative = tagRelative)
     writeFile("tags", tags)
     return
   else:
@@ -513,7 +532,8 @@ proc main() =
       rootsToScan.add(pth)
 
   let tags = generateCtagsForDirImpl(rootsToScan, excludes,
-      includePrivate = includePrivate)
+      baseDir = (if tagRelative: (if outFile.len > 0 and outFile != "-": parentDir(outFile) else: getCurrentDir()) else: ""),
+      includePrivate = includePrivate, tagRelative = tagRelative)
 
   if outFile.len == 0 or outFile == "-":
     stdout.write(tags)
