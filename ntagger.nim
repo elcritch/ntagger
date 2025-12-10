@@ -220,6 +220,20 @@ proc isExcludedPath(path: string, excludes: openArray[string]): bool =
     if normalized.contains(normPat):
       return true
 
+proc sanitizeTagFieldValue(s: string): string =
+  ## Normalize a tag field value so that it does not contain any
+  ## embedded newlines or tab characters, which would otherwise
+  ## break the ctags line-oriented format.
+  var lastWasSpace = false
+  for ch in s:
+    if ch in ['\n', '\r', '\t']:
+      if not lastWasSpace:
+        result.add ' '
+        lastWasSpace = true
+    else:
+      result.add ch
+      lastWasSpace = (ch == ' ')
+
 proc generateCtagsForDirImpl(
     roots: openArray[string],
     excludes: openArray[string],
@@ -330,7 +344,7 @@ proc generateCtagsForDirImpl(
       "line:" & $t.line & "\t"
 
     if t.signature.len > 0:
-      line.add "signature:" & t.signature & "\t"
+      line.add "signature:" & sanitizeTagFieldValue(t.signature) & "\t"
 
     line.add "language:Nim\n"
     result.add line

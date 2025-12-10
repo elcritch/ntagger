@@ -18,6 +18,18 @@ proc tagsLinesForDir(dir: string): seq[string] =
   let tagsText = generateCtagsForDir(dir)
   tagsText.splitLines.filterIt(it.len > 0)
 
+proc badFilePath(): string =
+  ## Resolve the location of the bad.nim test file
+  ## regardless of whether the test is run from the repo root
+  ## or from within the tests/ directory.
+  let cwd = getCurrentDir()
+  if fileExists(cwd / "bad.nim"):
+    result = cwd / "bad.nim"
+  elif fileExists(cwd / "tests" / "bad.nim"):
+    result = cwd / "tests" / "bad.nim"
+  else:
+    raise newException(OSError, "bad.nim test file not found")
+
 suite "ctags output":
   test "header is extended ctags":
     let tmp = sampleDir()
@@ -100,3 +112,19 @@ suite "ctags output":
     let tagsText = generateCtagsForDir(filePath)
     check tagsText.contains("publicProc")
     check not tagsText.contains("privateProc")
+
+  test "signatures remain on a single line":
+    let badPath = badFilePath()
+
+    # When generating tags for a file that contains a complex
+    # default parameter expression, the resulting signature field
+    # should not introduce embedded newlines that split the tag
+    # across multiple lines.
+    let tagsText = generateCtagsForDir(badPath)
+    let lines = tagsText.splitLines.filterIt(it.len > 0)
+    let tagLines = lines.filterIt(not it.startsWith("!_TAG_"))
+
+    # We expect a single tag line for addOTAMethods, not a
+    # continuation line caused by a newline in the signature.
+    check tagLines.len == 1
+    check tagLines[0].startsWith("addOTAMethods\t")
