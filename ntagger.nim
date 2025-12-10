@@ -317,7 +317,7 @@ proc generateCtagsForDirImpl(
           relativePath(t.file, effectiveBaseDir)
         else:
           t.file
-      except OSError:
+      except ValueError:
         # Fallback to the original path if a relative path cannot be
         # constructed for some reason.
         t.file
