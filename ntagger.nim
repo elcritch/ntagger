@@ -242,7 +242,7 @@ proc sanitizeTagFieldValue(s: string): string =
       result.add ch
       lastWasSpace = (ch == ' ')
 
-proc generateCtagsForDirImpl*(
+proc generateCtagsForDir*(
     roots: openArray[string],
     excludes: openArray[string],
     baseDir = "",
@@ -511,9 +511,13 @@ proc main() =
         if not systemMode and not pth.isRelativeTo(depsDir):
           continue
         rootsToScan.add(pth)
-      let depTags = generateCtagsForDirImpl(rootsToScan, [],
-          baseDir = (if tagRelative: depsDir else: ""),
-          includePrivate = includePrivate, tagRelative = tagRelative)
+      let 
+        baseDir = if tagRelative: depsDir else: ""
+        depTags = generateCtagsForDir(
+                      rootsToScan, [],
+                      baseDir = baseDir,
+                      includePrivate = includePrivate,
+                      tagRelative = tagRelative)
       writeFile(depsDir/"tags", $depTags)
 
     rootsToScan.add(roots)
@@ -545,7 +549,7 @@ proc main() =
         getCurrentDir()
     else: ""
 
-  let tags = generateCtagsForDirImpl(rootsToScan, excludes,
+  let tags = generateCtagsForDir(rootsToScan, excludes,
                                      baseDir = baseDir,
                                      includePrivate = includePrivate,
                                      tagRelative = tagRelative)
