@@ -344,17 +344,6 @@ proc `$`*(tags: seq[Tag]): string =
   result.add "!_TAG_PROGRAM_VERSION\t0.1\t//\n"
 
   for t in tags:
-    #let relFile =
-    #  try:
-    #    if isRelativeTo(t.file, effectiveBaseDir):
-    #      relativePath(t.file, effectiveBaseDir)
-    #    else:
-    #      t.file
-    #  except ValueError:
-    #    # Fallback to the original path if a relative path cannot be
-    #    # constructed for some reason.
-    #    t.file
-
     var line =
       t.name & "\t" &
       t.file & "\t" &
@@ -367,23 +356,6 @@ proc `$`*(tags: seq[Tag]): string =
 
     line.add "language:Nim\n"
     result.add line
-
-#proc generateCtagsForDir*(root: string): string =
-#  ## Backwards-compatible wrapper that generates tags without any
-#  ## exclude patterns.
-#  result = generateCtagsForDirImpl([root], [], includePrivate = false)
-#
-#proc generateCtagsForDir*(root: string, excludes: openArray[string]): string =
-#  ## Generate tags while skipping files whose relative paths match
-#  ## any of the provided exclude patterns.
-#  result = generateCtagsForDirImpl([root], excludes, includePrivate = false)
-#
-#proc generateCtagsForDir*(root: string, excludes: openArray[string],
-#    includePrivate: bool): string =
-#  ## Generate tags while optionally including private symbols when
-#  ## `includePrivate` is set to true.
-#  result = generateCtagsForDirImpl([root], excludes,
-#      includePrivate = includePrivate)
 
 proc queryNimSettingSeq(setting: string): seq[string] =
   ## Invoke the Nim compiler to query a setting sequence such as
