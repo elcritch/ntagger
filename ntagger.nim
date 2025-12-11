@@ -519,25 +519,23 @@ proc main() =
   var rootsToScan: seq[string] = @[]
   let depsDir = "deps"
 
+  echo "searchpaths: ", searchpaths()
+
   if atlasMode or atlasAllMode:
     if not fileExists(depsDir / "tags") or atlasAllMode:
       for pth in searchPaths():
         let name = pth.splitFile().name
         if name.startsWith("_"): continue
-        if not systemMode and not pth.isRelativeTo(depsDir): continue
+        if not systemMode and not pth.isRelativeTo(depsDir):
+          continue
         rootsToScan.add(pth)
       let depTags = generateCtagsForDirImpl(rootsToScan, [],
           baseDir = (if tagRelative: depsDir else: ""),
           includePrivate = includePrivate, tagRelative = tagRelative)
       writeFile(depsDir/"tags", depTags)
 
-    var projectRoots: seq[string] = @[]
-    projectRoots.add(roots)
-    let tags = generateCtagsForDirImpl(projectRoots, [depsDir],
-        baseDir = (if tagRelative: getCurrentDir() else: ""),
-        includePrivate = includePrivate, tagRelative = tagRelative)
-    writeFile("tags", tags)
-    return
+    rootsToScan.add(roots)
+    outFile = "tags"
   else:
     rootsToScan.add(roots)
 
