@@ -15,8 +15,8 @@ proc sampleDir(): string =
     raise newException(OSError, "sample1 test directory not found")
 
 proc tagsLinesForDir(dir: string): seq[string] =
-  let tagsText = generateCtagsForDir(dir)
-  tagsText.splitLines.filterIt(it.len > 0)
+  let tagsText = $generateCtagsForDirImpl([dir], [])
+  result = tagsText.splitLines.filterIt(it.len > 0)
 
 proc badFilePath(): string =
   ## Resolve the location of the bad.nim test file
@@ -60,7 +60,7 @@ suite "ctags output":
       check cols[3].startsWith("kind:")
 
     # Ensure specific symbols are present
-    let tagsText = generateCtagsForDir(tmp)
+    let tagsText = $generateCtagsForDirImpl([tmp], [])
     check tagsText.contains("publicProc")
     check tagsText.contains("Foo")
     check tagsText.contains("globalVar")
@@ -100,7 +100,7 @@ suite "ctags output":
     check allTagLines.len > 0
 
     # Exclude the only Nim file in the sample directory by name.
-    let tagsWithExclude = generateCtagsForDir(tmp, ["sample_module.nim"])
+    let tagsWithExclude = $generateCtagsForDirImpl([tmp], ["sample_module.nim"])
     let linesWithExclude = tagsWithExclude.splitLines.filterIt(it.len > 0)
     let tagLinesWithExclude = linesWithExclude.filterIt(not it.startsWith("!_TAG_"))
 
@@ -111,7 +111,7 @@ suite "ctags output":
 
   test "private symbols can be included explicitly":
     let tmp = sampleDir()
-    let tagsText = generateCtagsForDir(tmp, @[], true)
+    let tagsText = $generateCtagsForDirImpl([tmp], [], includePrivate=true)
 
     # By default, private symbols are omitted (covered by another
     # test), but when explicitly requested they should be present
@@ -125,7 +125,7 @@ suite "ctags output":
 
     # When passing a single file as the root, we still produce a
     # valid tags stream and respect the exported-only default.
-    let tagsText = generateCtagsForDir(filePath)
+    let tagsText = $generateCtagsForDirImpl([filePath], [])
     check tagsText.contains("publicProc")
     check not tagsText.contains("privateProc")
 
@@ -140,7 +140,7 @@ suite "ctags output":
     # default parameter expression, the resulting signature field
     # should not introduce embedded newlines that split the tag
     # across multiple lines.
-    let tagsText = generateCtagsForDir(badPath)
+    let tagsText = $generateCtagsForDirImpl([badPath], [])
     let lines = tagsText.splitLines.filterIt(it.len > 0)
     let tagLines = lines.filterIt(not it.startsWith("!_TAG_"))
 

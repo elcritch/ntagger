@@ -242,13 +242,14 @@ proc sanitizeTagFieldValue(s: string): string =
       result.add ch
       lastWasSpace = (ch == ' ')
 
-proc generateCtagsForDirImpl(
+proc generateCtagsForDirImpl*(
     roots: openArray[string],
     excludes: openArray[string],
     baseDir = "",
     includePrivate = false,
+    modulesOnly = false,
     tagRelative = false
-): string =
+): seq[Tag] =
 
   ## Generate a universal-ctags compatible tags file for all Nim
   ## modules found under one or more `roots` (searched recursively),
@@ -292,7 +293,8 @@ proc generateCtagsForDirImpl(
 
         let moduleName = moduleNameFromPath(path)
         addTag(tags, path, 1, moduleName, tkModule)
-        tags.add collectTagsForFile(conf, cache, path, includePrivate)
+        if not modulesOnly:
+          tags.add collectTagsForFile(conf, cache, path, includePrivate)
     elif fileExists(absRoot):
       # Allow roots to be explicit Nim files in addition to
       # directories; in that case, process just the file itself.
@@ -310,7 +312,8 @@ proc generateCtagsForDirImpl(
 
       let moduleName = moduleNameFromPath(absRoot)
       addTag(tags, absRoot, 1, moduleName, tkModule)
-      tags.add collectTagsForFile(conf, cache, absRoot, includePrivate)
+      if not modulesOnly:
+        tags.add collectTagsForFile(conf, cache, absRoot, includePrivate)
 
   if tagRelative:
     for tag in tags.mitems:
@@ -320,8 +323,12 @@ proc generateCtagsForDirImpl(
         # Keep absolute path if relative cannot be constructed
         discard
 
+  result = tags
+
+proc `$`*(tags: seq[Tag]): string =
   # Sort tags by name, then file, then line, as expected by ctags
   # when reporting a sorted file.
+  var tags = tags
   tags.sort(proc (a, b: Tag): int =
     result = cmp(a.name, b.name)
     if result == 0:
@@ -337,20 +344,20 @@ proc generateCtagsForDirImpl(
   result.add "!_TAG_PROGRAM_VERSION\t0.1\t//\n"
 
   for t in tags:
-    let relFile =
-      try:
-        if isRelativeTo(t.file, effectiveBaseDir):
-          relativePath(t.file, effectiveBaseDir)
-        else:
-          t.file
-      except ValueError:
-        # Fallback to the original path if a relative path cannot be
-        # constructed for some reason.
-        t.file
+    #let relFile =
+    #  try:
+    #    if isRelativeTo(t.file, effectiveBaseDir):
+    #      relativePath(t.file, effectiveBaseDir)
+    #    else:
+    #      t.file
+    #  except ValueError:
+    #    # Fallback to the original path if a relative path cannot be
+    #    # constructed for some reason.
+    #    t.file
 
     var line =
       t.name & "\t" &
-      relFile & "\t" &
+      t.file & "\t" &
       $t.line & ";\"\t" &
       "kind:" & tagKindName(t.kind) & "\t" &
       "line:" & $t.line & "\t"
@@ -361,22 +368,22 @@ proc generateCtagsForDirImpl(
     line.add "language:Nim\n"
     result.add line
 
-proc generateCtagsForDir*(root: string): string =
-  ## Backwards-compatible wrapper that generates tags without any
-  ## exclude patterns.
-  result = generateCtagsForDirImpl([root], [], includePrivate = false)
-
-proc generateCtagsForDir*(root: string, excludes: openArray[string]): string =
-  ## Generate tags while skipping files whose relative paths match
-  ## any of the provided exclude patterns.
-  result = generateCtagsForDirImpl([root], excludes, includePrivate = false)
-
-proc generateCtagsForDir*(root: string, excludes: openArray[string],
-    includePrivate: bool): string =
-  ## Generate tags while optionally including private symbols when
-  ## `includePrivate` is set to true.
-  result = generateCtagsForDirImpl([root], excludes,
-      includePrivate = includePrivate)
+#proc generateCtagsForDir*(root: string): string =
+#  ## Backwards-compatible wrapper that generates tags without any
+#  ## exclude patterns.
+#  result = generateCtagsForDirImpl([root], [], includePrivate = false)
+#
+#proc generateCtagsForDir*(root: string, excludes: openArray[string]): string =
+#  ## Generate tags while skipping files whose relative paths match
+#  ## any of the provided exclude patterns.
+#  result = generateCtagsForDirImpl([root], excludes, includePrivate = false)
+#
+#proc generateCtagsForDir*(root: string, excludes: openArray[string],
+#    includePrivate: bool): string =
+#  ## Generate tags while optionally including private symbols when
+#  ## `includePrivate` is set to true.
+#  result = generateCtagsForDirImpl([root], excludes,
+#      includePrivate = includePrivate)
 
 proc queryNimSettingSeq(setting: string): seq[string] =
   ## Invoke the Nim compiler to query a setting sequence such as
@@ -455,6 +462,7 @@ proc main() =
     includePrivate = false
     depsOnly = false
     tagRelative = false
+    systemModules = false
     excludes: seq[string] = @[]
 
   var parser = initOptParser(commandLineParams())
@@ -489,6 +497,8 @@ proc main() =
           autoMode = true
         of "s", "system":
           systemMode = true
+        of "M", "system-modules":
+          systemModules = true
         of "p", "private":
           includePrivate = true
         of "atlas-all":
@@ -532,7 +542,7 @@ proc main() =
       let depTags = generateCtagsForDirImpl(rootsToScan, [],
           baseDir = (if tagRelative: depsDir else: ""),
           includePrivate = includePrivate, tagRelative = tagRelative)
-      writeFile(depsDir/"tags", depTags)
+      writeFile(depsDir/"tags", $depTags)
 
     rootsToScan.add(roots)
     outFile = "tags"
@@ -554,16 +564,24 @@ proc main() =
     for pth in searchPaths():
       if pth.isRelativeTo(depsDir): continue
       rootsToScan.add(pth)
+  
+  let baseDir =
+    if tagRelative:
+      if outFile.len > 0 and outFile != "-":
+        parentDir(outFile)
+      else:
+        getCurrentDir()
+    else: ""
 
   let tags = generateCtagsForDirImpl(rootsToScan, excludes,
-      baseDir = (if tagRelative: (if outFile.len > 0 and outFile !=
-          "-": parentDir(outFile) else: getCurrentDir()) else: ""),
-      includePrivate = includePrivate, tagRelative = tagRelative)
+                                     baseDir = baseDir,
+                                     includePrivate = includePrivate,
+                                     tagRelative = tagRelative)
 
   if outFile.len == 0 or outFile == "-":
-    stdout.write(tags)
+    stdout.write($tags)
   else:
-    writeFile(outFile, tags)
+    writeFile(outFile, $tags)
 
 when isMainModule:
   main()
