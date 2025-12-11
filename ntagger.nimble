@@ -1,4 +1,4 @@
-version = "0.6.0"
+version = "0.6.1"
 srcDir = "."
 author = "Jaremy Creechley"
 description = "binary for generating Nim extended ctags files"
