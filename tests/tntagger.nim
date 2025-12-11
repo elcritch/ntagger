@@ -76,6 +76,27 @@ suite "ctags output":
     check sigField.len == 1
     check sigField[0].contains("x: int")
 
+  test "imports are tagged using import kind":
+    let tmp = sampleDir()
+    let lines = tagsLinesForDir(tmp)
+    let tagLines = lines.filterIt(not it.startsWith("!_TAG_"))
+
+    let importLines = tagLines.filterIt(it.contains("\tkind:import\t"))
+    check importLines.len > 0
+
+    let importNames = importLines.mapIt(it.split('\t')[0]).toSeq()
+
+    # Simple std/[] multi-imports
+    check importNames.contains("os")
+    check importNames.contains("strutils")
+
+    # Aliased module import
+    check importNames.contains("su")
+
+    # Symbols imported via "from ... import" (with and without alias)
+    check importNames.contains("sin")
+    check importNames.contains("cosine")
+
   test "exclude patterns skip matching files":
     let tmp = sampleDir()
 

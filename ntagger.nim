@@ -6,7 +6,8 @@ type
   TagKind* = enum
     tkType, tkVar, tkLet, tkConst,
     tkProc, tkFunc, tkMethod, tkIterator,
-    tkConverter, tkMacro, tkTemplate
+    tkConverter, tkMacro, tkTemplate,
+    tkImport
 
   Tag* = object
     name*: string
@@ -28,6 +29,7 @@ proc tagKindName*(k: TagKind): string =
   of tkConverter: "converter"
   of tkMacro: "macro"
   of tkTemplate: "template"
+  of tkImport: "import"
 
 proc addTag(tags: var seq[Tag], file: string, line: int, name: string, k: TagKind,
             signature = "") =
@@ -138,12 +140,125 @@ proc buildSignature(n: PNode): string =
       result.add $pragma
     result.add " .}"
 
+proc importAliasFromStringPath(path: string): string =
+  ## Derive a reasonable tag name from a string
+  ## literal import such as "foo/bar.nim" by taking the last
+  ## path component without extension.
+  if path.len == 0:
+    return
+  let (_, namePart, _) = splitFile(path)
+  var base = namePart
+  # Strip a trailing .nim extension if present.
+  if base.len > 4 and base.endsWith(".nim"):
+    base = base[0 ..< base.len-4]
+  result = base
+
+proc collectImportNamesFromExpr(n: PNode, names: var seq[string]) =
+  ## Collect the visible names introduced by an import-like
+  ## expression. This focuses on the names that become available
+  ## in the importing module (aliases, last path components, etc.).
+  case n.kind
+  of nkIdent, nkSym:
+    let name = nodeName(n)
+    if name.len > 0:
+      names.add(name)
+  of nkStrLit, nkRStrLit, nkTripleStrLit:
+    let alias = importAliasFromStringPath(n.strVal)
+    if alias.len > 0:
+      names.add(alias)
+  of nkImportAs:
+    # ``import foo as bar`` after semantic transformation.
+    if n.len >= 2:
+      collectImportNamesFromExpr(n[1], names)
+  of nkInfix:
+    if n.len >= 3 and n[0].kind in {nkIdent, nkSym}:
+      let opName = nodeName(n[0])
+      if opName == "as":
+        # Alias form: import foo as bar
+        collectImportNamesFromExpr(n[2], names)
+        return
+      elif opName == "/":
+        # Path notation like ``std/os`` or ``std/[os, strutils]``.
+        let rhs = n[2]
+        if rhs.kind == nkBracket:
+          for child in rhs:
+            collectImportNamesFromExpr(child, names)
+        else:
+          collectImportNamesFromExpr(rhs, names)
+        return
+    # Fallback: try to get a plain name, if any.
+    let name = nodeName(n)
+    if name.len > 0:
+      names.add(name)
+  of nkBracket:
+    # Handles constructs like ``[os, strutils]`` (already split from
+    # any surrounding path prefix).
+    for child in n:
+      collectImportNamesFromExpr(child, names)
+  of nkPragmaExpr:
+    # ``foo {.all.}`` – ignore pragmas for the visible name.
+    if n.len > 0:
+      collectImportNamesFromExpr(n[0], names)
+  of nkPostfix:
+    # ``foo*``-style postfix; take the underlying identifier.
+    if n.len > 1:
+      collectImportNamesFromExpr(n[1], names)
+  of nkPar:
+    if n.len > 0:
+      collectImportNamesFromExpr(n[0], names)
+  else:
+    let name = nodeName(n)
+    if name.len > 0:
+      names.add(name)
+
+proc addImportTags(n: PNode, file: string, tags: var seq[Tag]) =
+  ## Emit import tags for the given import-related AST node.
+  ##
+  ## We follow the ctags convention of using an "import" kind and
+  ## tagging the names that become visible in the importing module
+  ## (module aliases, imported symbols, etc.).
+  case n.kind
+  of nkImportStmt:
+    # ``import foo, bar``
+    for child in n:
+      var names: seq[string] = @[]
+      collectImportNamesFromExpr(child, names)
+      let line = if child.info.line != 0: int(child.info.line)
+                 else: int(n.info.line)
+      for name in names:
+        addTag(tags, file, line, name, tkImport)
+  of nkImportExceptStmt:
+    # ``import foo except bar, baz`` – tag the imported module name
+    # (the first child) but not the excluded symbols.
+    if n.len > 0:
+      var names: seq[string] = @[]
+      collectImportNamesFromExpr(n[0], names)
+      let line = if n[0].info.line != 0: int(n[0].info.line)
+                 else: int(n.info.line)
+      for name in names:
+        addTag(tags, file, line, name, tkImport)
+  of nkFromStmt:
+    # ``from foo import bar, baz`` – tag the imported symbols.
+    if n.len > 1:
+      for i in 1 ..< n.len:
+        var names: seq[string] = @[]
+        let child = n[i]
+        collectImportNamesFromExpr(child, names)
+        let line = if child.info.line != 0: int(child.info.line)
+                   else: int(n.info.line)
+        for name in names:
+          addTag(tags, file, line, name, tkImport)
+  else:
+    discard
+
 proc collectTagsFromAst(n: PNode, file: string, tags: var seq[Tag],
     includePrivate: bool) =
   ## Walks the AST and collects tags for declarations we care about.
   case n.kind
   of nkCommentStmt:
     discard
+  of nkImportStmt, nkImportExceptStmt, nkFromStmt:
+    addImportTags(n, file, tags)
   of nkProcDef:
     if includePrivate or isExportedName(n[namePos]):
       let name = nodeName(n[namePos])
@@ -546,7 +661,8 @@ proc main() =
       rootsToScan.add(pth)
 
   let tags = generateCtagsForDirImpl(rootsToScan, excludes,
-      baseDir = (if tagRelative: (if outFile.len > 0 and outFile != "-": parentDir(outFile) else: getCurrentDir()) else: ""),
+      baseDir = (if tagRelative: (if outFile.len > 0 and outFile !=
+          "-": parentDir(outFile) else: getCurrentDir()) else: ""),
       includePrivate = includePrivate, tagRelative = tagRelative)
 
   if outFile.len == 0 or outFile == "-":

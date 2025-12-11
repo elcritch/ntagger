@@ -1,4 +1,8 @@
 ## Sample module for tag tests
+
+import std/[os, strutils]
+import std/sequtils as su
+from std/math import sin, cos as cosine
 type
   Foo* = object
     field: int
@@ -34,4 +38,3 @@ macro myMacro*(body: untyped): untyped =
   body
 
 template myTemplate*(x: int): int = x + 10
-

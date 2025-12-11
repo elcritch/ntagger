@@ -16,3 +16,7 @@ task test, "Compile and run all tests in tests/":
         echo fmt"[sigils] Running {path}"
         exec fmt"nim c --nimcache:../.nimcache -r {path}"
 
+# begin Nimble config (version 2)
+when withDir(thisDir(), system.fileExists("nimble.paths")):
+  include "nimble.paths"
+# end Nimble config

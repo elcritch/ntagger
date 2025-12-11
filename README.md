@@ -30,6 +30,10 @@ ntagger -f tags --exclude:deps
   procs/funcs, methods, iterators, converters,
   macros and templates, with an option to also
   include private (non-exported) symbols.
+- Emits tags for Nim imports using a
+  dedicated `kind:import` tag kind, covering
+  plain, aliased, `from ... import`, and
+  `std/[foo, bar]` forms.
 - Includes extra fields such as `kind`,
   source `line`, `signature` and
   `language:Nim`.
