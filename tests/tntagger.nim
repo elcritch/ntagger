@@ -76,26 +76,21 @@ suite "ctags output":
     check sigField.len == 1
     check sigField[0].contains("x: int")
 
-  test "imports are tagged using import kind":
+  test "modules are tagged using module kind":
     let tmp = sampleDir()
     let lines = tagsLinesForDir(tmp)
     let tagLines = lines.filterIt(not it.startsWith("!_TAG_"))
 
+    let moduleLines = tagLines.filterIt(it.contains("\tkind:module\t"))
+    check moduleLines.len == 1
+
+    let moduleCols = moduleLines[0].split('\t')
+    check moduleCols.len >= 3
+    check moduleCols[0] == "sample_module"
+    check moduleCols[1].endsWith("sample_module.nim")
+
     let importLines = tagLines.filterIt(it.contains("\tkind:import\t"))
-    check importLines.len > 0
-
-    let importNames = importLines.mapIt(it.split('\t')[0]).toSeq()
-
-    # Simple std/[] multi-imports
-    check importNames.contains("os")
-    check importNames.contains("strutils")
-
-    # Aliased module import
-    check importNames.contains("su")
-
-    # Symbols imported via "from ... import" (with and without alias)
-    check importNames.contains("sin")
-    check importNames.contains("cosine")
+    check importLines.len == 0
 
   test "exclude patterns skip matching files":
     let tmp = sampleDir()
@@ -134,6 +129,10 @@ suite "ctags output":
     check tagsText.contains("publicProc")
     check not tagsText.contains("privateProc")
 
+    # A module tag should also be present for the file root.
+    check tagsText.contains("sample_module\t")
+    check tagsText.contains("kind:module\t")
+
   test "signatures remain on a single line":
     let badPath = badFilePath()
 
@@ -147,5 +146,5 @@ suite "ctags output":
 
     # We expect a single tag line for addOTAMethods, not a
     # continuation line caused by a newline in the signature.
-    check tagLines.len == 1
-    check tagLines[0].startsWith("addOTAMethods\t")
+    let otaLines = tagLines.filterIt(it.startsWith("addOTAMethods\t"))
+    check otaLines.len == 1
