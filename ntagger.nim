@@ -247,8 +247,8 @@ proc generateCtagsForDir*(
     excludes: openArray[string],
     baseDir = "",
     includePrivate = false,
-    modulesOnly = false,
-    tagRelative = false
+    tagRelative = false,
+    modulesOnly = false
 ): seq[Tag] =
 
   ## Generate a universal-ctags compatible tags file for all Nim
@@ -498,10 +498,11 @@ proc main() =
 
   if roots.len == 0:
     roots.add getCurrentDir()
-  var rootsToScan: seq[string] = @[]
+  var rootsToScan: seq[string]
+  var tags: seq[Tag]
   let depsDir = "deps"
 
-  echo "searchpaths: ", searchpaths()
+  #echo "searchpaths: ", searchpaths()
 
   if atlasMode or atlasAllMode:
     if not fileExists(depsDir / "tags") or atlasAllMode:
@@ -511,13 +512,12 @@ proc main() =
         if not systemMode and not pth.isRelativeTo(depsDir):
           continue
         rootsToScan.add(pth)
-      let 
+      let
         baseDir = if tagRelative: depsDir else: ""
-        depTags = generateCtagsForDir(
-                      rootsToScan, [],
-                      baseDir = baseDir,
-                      includePrivate = includePrivate,
-                      tagRelative = tagRelative)
+        depTags = generateCtagsForDir(rootsToScan, [],
+                                      baseDir = baseDir,
+                                      includePrivate = includePrivate,
+                                      tagRelative = tagRelative)
       writeFile(depsDir/"tags", $depTags)
 
     rootsToScan.add(roots)
@@ -549,10 +549,21 @@ proc main() =
         getCurrentDir()
     else: ""
 
-  let tags = generateCtagsForDir(rootsToScan, excludes,
-                                     baseDir = baseDir,
-                                     includePrivate = includePrivate,
-                                     tagRelative = tagRelative)
+  if systemModules:
+    var systemRoots: seq[string]
+    for pth in searchPaths():
+      if pth.isRelativeTo(depsDir): continue
+      systemRoots.add(pth)
+    tags.add generateCtagsForDir(systemRoots, excludes,
+                                 baseDir = baseDir,
+                                 includePrivate = includePrivate,
+                                 tagRelative = tagRelative,
+                                 modulesOnly = true)
+  
+  tags.add generateCtagsForDir(rootsToScan, excludes,
+                               baseDir = baseDir,
+                               includePrivate = includePrivate,
+                               tagRelative = tagRelative)
 
   if outFile.len == 0 or outFile == "-":
     stdout.write($tags)
