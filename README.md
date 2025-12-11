@@ -155,6 +155,9 @@ tags.
 `--system` (or `-s`) enables generating tags for
 Nim's standard library.
 
+`--system-modules` (or `-M`) generates module tags for
+Nim's standard library.
+
 Example:
 
 ```bash

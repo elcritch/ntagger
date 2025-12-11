@@ -525,21 +525,20 @@ proc main() =
                                          modulesOnly = true)
 
   if atlasMode or atlasAllMode:
-    if not fileExists(depsDir / "tags") or atlasAllMode:
-      for pth in searchPaths():
-        let name = pth.splitFile().name
-        if name.startsWith("_"): continue
-        if not systemMode and not pth.isRelativeTo(depsDir):
-          continue
-        rootsToScan.add(pth)
-      let
-        baseDir = if tagRelative: depsDir else: ""
-        depTags = generateCtagsForDir(rootsToScan, [],
-                                      baseDir = baseDir,
-                                      includePrivate = includePrivate,
-                                      tagRelative = tagRelative)
-      writeFile(depsDir/"tags", $(depTags & moduleTags))
-      moduleTags.setLen(0)
+    for pth in searchPaths():
+      let name = pth.splitFile().name
+      if name.startsWith("_"): continue
+      if not systemMode and not pth.isRelativeTo(depsDir):
+        continue
+      rootsToScan.add(pth)
+    let
+      baseDir = if tagRelative: depsDir else: ""
+      depTags = generateCtagsForDir(rootsToScan, [],
+                                    baseDir = baseDir,
+                                    includePrivate = includePrivate,
+                                    tagRelative = tagRelative)
+    writeFile(depsDir/"tags", $(depTags & moduleTags))
+    moduleTags.setLen(0)
 
     rootsToScan.add(roots)
     outFile = "tags"
